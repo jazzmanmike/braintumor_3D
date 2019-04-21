@@ -1,0 +1,167 @@
+# Copyright Geoffrey Oliver, Addenbrooke's hospital, 2019
+
+import bpy
+import math
+import os
+
+filepath=os.getcwd()
+
+# This defines the colours used and is based on txt file having a format Code Name R G B
+coloursetfile = open(filepath+"coloursetup.txt","rt")
+
+# This is based on txt file having the format x,y,z
+coordsfile = open(filepath+"XYZ.txt","rt")
+
+# This is the sizes to set the spheres to and is based on txt file having a single entry for each row in the coordinates file
+spheresizesfile = open(filepath+"Sizes.txt","rt")
+
+# This is the colours to set the spheres to and is based on txt file having a single entry for each row in the coordinates file
+spherecoloursfile = open(filepath+"Colours.txt","rt")
+
+# This is based on txt file having a header row and the format 0,1,0,0,1 - should be same no. of columns (& rows) as the other file has rows
+matrixfile = open(filepath+"Edges.txt","rt")
+
+# This is the file to export the obj model to (the 'model' folder must exist)
+exportfile = filepath+"model/model.obj"
+
+#---------------------------------------------------------------------------
+#NOTE: When loading this model into Meshlab you need to change the render colours from 'Vertex' to 'Face' or else the colours don't display correctly. You can then resave it as a PLY which is then ok.
+#---------------------------------------------------------------------------
+
+printspheres = 1 #set to 0 to remove spheres, 1 to draw spheres
+printlinks = 1 #set to 0 to remove links, 1 to draw links
+exportmodel = 1 #set to 0 for no save, 1 to save OBJ model to above path (all objects will be saved including the stand)
+#------------------------------------------------------------------------------------------------------------
+#the following subroutine draws a cylinder between 2 points in 3D space
+def cylinder_between(x1,y1,z1,x2,y2,z2,r):
+    #distance between 2 points in 3D space where P1 = (x1,y1,z1) and P2 = (x2,y2,z2)
+    #distP1P2 = sqr((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
+    dx=x2-x1
+    dy=y2-y1
+    dz=z2-z1
+    conlen = math.sqrt((dx**2) + (dy**2) + (dz**2))
+    bpy.ops.mesh.primitive_cylinder_add(radius=r,depth=conlen,location=((dx/2+x1),(dy/2+y1),(dz/2+z1)))
+    #and rotate it to point in the right direction
+    ang1=math.acos(dz/conlen) #in radians
+    ang2=math.atan2(dy,dx) #in radians
+    bpy.context.object.rotation_euler[1]=ang1
+    bpy.context.object.rotation_euler[2]=ang2
+#------------------------------------------------------------------------------------------------------------
+#create the colours (materials) for use later
+def makeMaterial(name,diffuse):
+    mat = bpy.data.materials.new(name)
+    mat.diffuse_color = diffuse
+    mat.diffuse_intensity = 1.0
+    mat.ambient = 1
+#------------------------------------------------------------------------------------------------------------
+#set an objects colour (material)
+def setMaterial(ob,mat):
+    me = ob.data
+    me.materials.append(mat)
+#------------------------------------------------------------------------------------------------------------
+
+#Start------------------------------------------------------------------------------------
+#Create material colours
+header = print(coloursetfile.readline()) #removes header row
+for coldat in coloursetfile:
+    coldat = coldat.rstrip()
+    Nrgb = coldat.split(" ")
+    rgb = Nrgb[2].split(",")
+    makeMaterial(Nrgb[0],(float(rgb[0]),float(rgb[1]),float(rgb[2])))
+
+#load in sphere colours ready to assign to spheres
+spherecoloursarray=[]#sphere colours array
+for colourdat in spherecoloursfile:
+    colourdat=colourdat.rstrip()
+    spherecoloursarray.append(str(colourdat))
+
+#load in sphere sizes ready to assign to spheres
+spheresizesarray=[]#sphere sizes array
+#header = print(spheresizesfile.readline()) #removes header row
+for sizedat in spheresizesfile:
+    sizedat=sizedat.rstrip()
+    spheresizesarray.append(str(sizedat))
+
+xyzarray=[]#locations array
+nodecounter=0
+
+#size values in the file don't work very well (actual values range from 0.1 to 1)
+#therefore scale spheres to this range 
+scaleMin = 0.25
+scaleMax = 6
+scaleActualMin = 0.1
+scaleActualMax = 1
+
+for nodedat in coordsfile:
+    temp = nodedat.rstrip()
+    xyz = temp.split(",")
+    x=float(xyz[0])
+    y=float(xyz[1])
+    z=float(xyz[2])
+
+    if printspheres==1:
+        #d=float(spheresizesarray[nodecounter])*10 #doesn't work as they come from the file try below
+        #recalculate sensible sphere size
+        d=(((float(spheresizesarray[nodecounter])-scaleActualMin)/(scaleActualMax - scaleActualMin))*(scaleMax-scaleMin)) + scaleMin
+
+        #draw sphere at this point
+        bpy.ops.mesh.primitive_uv_sphere_add(size=d,location=(x,y,z))
+        mat = bpy.data.materials.get(spherecoloursarray[nodecounter])
+    
+        setMaterial(bpy.context.active_object,mat)
+        bpy.ops.mesh.vertex_color_add()
+    
+    xyzarray.append([x,y,z]) #save coords to array for connections later
+    nodecounter+=1
+
+if printlinks==1:
+    #scale links to this range (assuming actual range from file is 0.1 to 1)
+    linkMin = 0.25
+    linkMax = 2
+    linkActualMin = 0.1
+    linkActualMax = 1
+
+    nodecounter = 0
+    concounter = 0
+    connected=[]#record of connections already drawn
+    connected.append(str(nodecounter)+" "+str(concounter))
+
+    for connsdat in matrixfile:
+        temp = connsdat.rstrip()
+        cns = temp.split(",")
+        concounter = 0
+        for links in cns:
+            if concounter != nodecounter:
+                if float(links) > 0:
+                    #first check if it has already been drawn (in the other direction)
+                    condrawn=0
+                    for drawn in connected:
+                        if (str(nodecounter) in drawn) and (str(concounter) in drawn):
+                            condrawn=1
+                            break
+                    if condrawn==0:
+                        condrawn=1
+                        #r = (float(links)*10)/2 #all look the same and a bit fat - Try below
+                        #recalculate sensible link size
+                        r=(((float(links)-linkActualMin)/(linkActualMax - linkActualMin))*(linkMax-linkMin)) + linkMin
+                    
+                        #cylinder_between(int(xyzarray[nodecounter][0]),int(xyzarray[nodecounter][1]),int(xyzarray[nodecounter][2]),int(xyzarray[concounter][0]),int(xyzarray[concounter][1]),int(xyzarray[concounter][2]),r)
+                        cylinder_between((xyzarray[nodecounter][0]),(xyzarray[nodecounter][1]),(xyzarray[nodecounter][2]),(xyzarray[concounter][0]),(xyzarray[concounter][1]),(xyzarray[concounter][2]),r)
+                        connected.append(str(nodecounter)+" "+str(concounter))
+                        #set connector colour - if either node isn't white then print it coloured, else print it white
+                        if spherecoloursarray[nodecounter]!="0":
+                            mat = bpy.data.materials.get(spherecoloursarray[nodecounter])
+                        elif spherecoloursarray[concounter]!="0":
+                            mat = bpy.data.materials.get(spherecoloursarray[concounter])
+                        else:
+                            mat = bpy.data.materials.get("0")
+                        setMaterial(bpy.context.active_object,mat)
+            concounter+=1
+        nodecounter+=1
+#End------------------------------------------------------------------------------------
+
+if exportmodel==1:
+    bpy.ops.export_scene.obj(filepath=exportfile,check_existing=True,axis_forward="-Z",axis_up="Y",filter_glob="*.obj;*.mtl",use_selection=False,use_animation=False,use_mesh_modifiers=True,use_edges=True,use_smooth_groups=False,use_smooth_groups_bitflags=False,use_normals=True,use_uvs=True,use_materials=True,use_triangles=False,use_nurbs=False,use_vertex_groups=False,use_blen_objects=True,group_by_object=False,group_by_material=False,keep_vertex_order=False,global_scale=1.0,path_mode="AUTO")
+#---------------------------------------------------------------------------
+#NOTE: When loading this model into Meshlab you need to change the render colours from 'Vertex' to 'Face' or else the colours don't display correctly. You can then resave it as a PLY which is then ok.
+#---------------------------------------------------------------------------

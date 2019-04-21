@@ -1,0 +1,56 @@
+#  braintumor_3Dprint.txt
+#
+#  Command notes for creating a 3d mesh in meshlab for 3d printing
+#
+#  Created by Michael Hart on 19/10/2017.
+
+# Install meshlab and set to run from terminal (uses stl / stereolithography files)
+# Organise files:
+# Freesurfer surfaces and tumour mask volume (MNI space)
+
+# A. First make brain mesh
+
+# 1. Merge cortical surfaces
+
+mris_convert --combinesurfs FS/surf/lh.pial FS/surf/rh.pial cortical.stl
+
+# 2. View & edit in Meshlab
+
+meshlab cortical.stl
+
+# 3. Adjust parameters (scale dependent laplacian smooth):
+#    smooth steps 100, perc on 0.1, save without binary encoding
+
+# B. Now make tumour mesh
+
+# 1. First re-orientate
+# can double check orientation of structural too but usually LIA
+
+mri_info --orientation masks/tumour_mask_mprage.nii.gz
+mri_convert --out_orientation LIA masks/tumour_mask_mprage.nii.gz masks/tumour_mask_mprage.nii.gz
+
+# 2. Now create surface
+
+mri_tessellate masks/tumour_mask_mprage.nii.gz 1 tumour_mask_mprage
+
+mris_convert tumour_mask_mprage tumour.stl
+
+# 3. Adjust parameters:
+#    smooth steps 200, perc on 0.7, save without binary encoding
+
+# C. Now make into a single file (called 'final.stl')
+
+# i. use terminal
+echo 'solid final.stl' > final.stl
+sed '/solid vcg/d' cortical.stl >> final.stl
+sed '/solid vcg/d' rh.tumour_mask_mprage2.stl >> final.stl
+echo 'endsolid final.stl' >> final.stl
+
+# can view to check
+meshlab final.stl
+
+# ii. or create a meshlab project (.mlp)
+# Add tumour, colour (per face color function), then add cortex
+
+
+
